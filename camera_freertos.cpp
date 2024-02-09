@@ -7,10 +7,10 @@
 OV2640 cam;
 
 extern WebServer server;
+
 TaskHandle_t tMjpeg;   // maneja las conexiones del cliente al servidor web
 TaskHandle_t tCam;     // gestiona la obtención de fotogramas de la cámara y su almacenamiento local
 TaskHandle_t tStream;  // en realidad transmite fotogramas a todos los clientes conectados
-
 
 // El semáforo frameSync se usa para evitar el búfer de transmisión, ya que se reemplaza con el siguiente cuadro
 SemaphoreHandle_t frameSync = NULL;
@@ -32,29 +32,29 @@ void mjpegCB(void* pvParameters) {
 
   // Creando un semáforo de sincronización de tramas e inicializándolo
   frameSync = xSemaphoreCreateBinary();
-  xSemaphoreGive( frameSync );
+  xSemaphoreGive(frameSync);
 
   // Creando una cola para rastrear todos los clientes conectados
-  streamingClients = xQueueCreate( 10, sizeof(WiFiClient*) );
+  streamingClients = xQueueCreate(10, sizeof(WiFiClient*));
 
- //=== sección de configuración ==================
+  //=== sección de configuración ==================
 
-   // Crear una tarea RTOS para capturar fotogramas de la cámara
+  // Crear una tarea RTOS para capturar fotogramas de la cámara
   xTaskCreatePinnedToCore(
-    camCB,        // callback
-    "cam",        // name
-    4096,         // stacj size
-    NULL,         // parameters
-    2,            // priority
-    &tCam,        // RTOS task handle
-    APP_CPU);     // core
+    camCB,     // callback
+    "cam",     // name
+    4096,      // stacj size
+    NULL,      // parameters
+    2,         // priority
+    &tCam,     // RTOS task handle
+    APP_CPU);  // core
 
   // Creando una tarea para enviar la transmisión a todos los clientes conectados
   xTaskCreatePinnedToCore(
     streamCB,
     "strmCB",
     4 * 1024,
-    NULL, //(void*) handler,
+    NULL,  //(void*) handler,
     2,
     &tStream,
     APP_CPU);
@@ -62,7 +62,7 @@ void mjpegCB(void* pvParameters) {
   // Registro de rutinas de manejo del servidor web
   server.on("/mjpeg", HTTP_GET, handleJPGSstream);
   server.on("/jpg", HTTP_GET, handleJPG);
-  
+
   server.onNotFound(handleNotFound);
 
   // Iniciando el servidor web
@@ -80,8 +80,8 @@ void mjpegCB(void* pvParameters) {
 
 
 // Variables de uso común:
-volatile size_t camSize;    // tamaño del cuadro actual, byte
-volatile char* camBuf;      // puntero al cuadro actual
+volatile size_t camSize;  // tamaño del cuadro actual, byte
+volatile char* camBuf;    // puntero al cuadro actual
 
 
 // ==== Tarea RTOS para tomar fotogramas de la cámara =========================
@@ -103,8 +103,8 @@ void camCB(void* pvParameters) {
   //=== loop() section  ===================
   xLastWakeTime = xTaskGetTickCount();
 
-  for (;;) {    
-    
+  for (;;) {
+
     // Toma un cuadro de la cámara y consulta su tamaño
     cam.run();
     //Serial.println('tomando frame camara');
@@ -116,7 +116,7 @@ void camCB(void* pvParameters) {
     }
 
     // Copia el cuadro actual en el búfer local
-    char* b = (char*) cam.getfb();
+    char* b = (char*)cam.getfb();
     memcpy(fbs[ifb], b, s);
 
     // Permita que otras tareas se ejecuten y espere hasta el final del intervalo de velocidad de fotogramas actual (si queda tiempo)
@@ -124,8 +124,8 @@ void camCB(void* pvParameters) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
     // Cambiar fotogramas solo si ningún fotograma se está transmitiendo actualmente a un cliente
-     // Espere en un semáforo hasta que se complete la operación del cliente
-    xSemaphoreTake( frameSync, portMAX_DELAY );
+    // Espere en un semáforo hasta que se complete la operación del cliente
+    xSemaphoreTake(frameSync, portMAX_DELAY);
 
     // No permitir interrupciones al cambiar el cuadro actual
     portENTER_CRITICAL(&xSemaphore);
@@ -136,19 +136,19 @@ void camCB(void* pvParameters) {
     portEXIT_CRITICAL(&xSemaphore);
 
     // Que cualquier persona que esté esperando un marco sepa que el marco está listo
-    xSemaphoreGive( frameSync );
+    xSemaphoreGive(frameSync);
 
     // Técnicamente solo se necesita una vez: informe a la tarea de transmisión que tenemos al menos un cuadro
-     // y podría comenzar a enviar marcos a los clientes, si los hay
-    xTaskNotifyGive( tStream );
+    // y podría comenzar a enviar marcos a los clientes, si los hay
+    xTaskNotifyGive(tStream);
 
     // Permitir que se ejecuten inmediatamente otras tareas (transmisión)
     taskYIELD();
 
     // Si la tarea de transmisión se ha suspendido sola (no hay clientes activos a los que transmitir)
-     // no hay necesidad de tomar fotogramas de la cámara. Podemos ahorrar un poco de jugo
-     // suspendiendo las tareas
-    if ( eTaskGetState( tStream ) == eSuspended ) {
+    // no hay necesidad de tomar fotogramas de la cámara. Podemos ahorrar un poco de jugo
+    // suspendiendo las tareas
+    if (eTaskGetState(tStream) == eSuspended) {
       vTaskSuspend(NULL);  // passing NULL means "suspend yourself"
     }
   }
@@ -166,18 +166,17 @@ char* allocateMemory(char* aPtr, size_t aSize) {
   char* ptr = NULL;
 
   // Si la memoria solicitada es más de 2/3 del montón libre actualmente, intente PSRAM inmediatamente
-  if ( aSize > freeHeap * 2 / 3 ) {
-    if ( psramFound() && ESP.getFreePsram() > aSize ) {
-      ptr = (char*) ps_malloc(aSize);
+  if (aSize > freeHeap * 2 / 3) {
+    if (psramFound() && ESP.getFreePsram() > aSize) {
+      ptr = (char*)ps_malloc(aSize);
     }
-  }
-  else {
+  } else {
     // Suficiente montón libre: intentemos asignar RAM rápida como búfer
-    ptr = (char*) malloc(aSize);
+    ptr = (char*)malloc(aSize);
 
     // Si falla la asignación en el montón, demos a PSRAM una oportunidad más:
-    if ( ptr == NULL && psramFound() && ESP.getFreePsram() > aSize) {
-      ptr = (char*) ps_malloc(aSize);
+    if (ptr == NULL && psramFound() && ESP.getFreePsram() > aSize) {
+      ptr = (char*)ps_malloc(aSize);
     }
   }
 
@@ -190,8 +189,8 @@ char* allocateMemory(char* aPtr, size_t aSize) {
 
 
 // ==== STREAMING ======================================================
-const char HEADER[] = "HTTP/1.1 200 OK\r\n" \
-                      "Access-Control-Allow-Origin: *\r\n" \
+const char HEADER[] = "HTTP/1.1 200 OK\r\n"
+                      "Access-Control-Allow-Origin: *\r\n"
                       "Content-Type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n";
 const char BOUNDARY[] = "\r\n--123456789000000000000987654321\r\n";
 const char CTNTTYPE[] = "Content-Type: image/jpeg\r\nContent-Length: ";
@@ -200,10 +199,16 @@ const int bdrLen = strlen(BOUNDARY);
 const int cntLen = strlen(CTNTTYPE);
 
 // ==== Manejar la solicitud de conexión de los clientes ===============================
-void handleJPGSstream(void)
-{
+void handleJPGSstream(void) {
+  String key = server.header("key");
+  if (!compararPasswords(passwordESP, key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
   // Solo puede acomodar 10 clientes. El límite es un valor predeterminado para las conexiones WiFi
-  if ( !uxQueueSpacesAvailable(streamingClients) ) return;
+  if (!uxQueueSpacesAvailable(streamingClients)) return;
 
 
   // Cree un nuevo objeto de cliente WiFi para realizar un seguimiento de este
@@ -215,25 +220,25 @@ void handleJPGSstream(void)
   client->write(BOUNDARY, bdrLen);
 
   // Empuje al cliente a la cola de transmisión
-  xQueueSend(streamingClients, (void *) &client, 0);
+  xQueueSend(streamingClients, (void*)&client, 0);
 
   // Activar tareas de streaming, si estaban suspendidas previamente:
-  if ( eTaskGetState( tCam ) == eSuspended ) vTaskResume( tCam );
-  if ( eTaskGetState( tStream ) == eSuspended ) vTaskResume( tStream );
+  if (eTaskGetState(tCam) == eSuspended) vTaskResume(tCam);
+  if (eTaskGetState(tStream) == eSuspended) vTaskResume(tStream);
 }
 
 
 
 // ==== En realidad transmita contenido a todos los clientes conectados ========================
-void streamCB(void * pvParameters) {
+void streamCB(void* pvParameters) {
   char buf[16];
   TickType_t xLastWakeTime;
   TickType_t xFrequency;
 
   // Espere hasta que se capture el primer cuadro y haya algo para enviar
-   // a los clientes
-  ulTaskNotifyTake( pdTRUE,          /* Borrar el valor de la notificación antes de salir. */
-                    portMAX_DELAY ); /* Bloquear indefinidamente. */
+  // a los clientes
+  ulTaskNotifyTake(pdTRUE,         /* Borrar el valor de la notificación antes de salir. */
+                   portMAX_DELAY); /* Bloquear indefinidamente. */
 
   xLastWakeTime = xTaskGetTickCount();
   for (;;) {
@@ -242,46 +247,44 @@ void streamCB(void * pvParameters) {
 
     // Solo molestarse en enviar algo si hay alguien mirando
     UBaseType_t activeClients = uxQueueMessagesWaiting(streamingClients);
-    if ( activeClients ) {
+    if (activeClients) {
       // Ajustar el periodo al número de clientes conectados
       xFrequency /= activeClients;
 
       // Ya que estamos enviando el mismo marco a todos,
-       // pop un cliente desde el frente de la colaqueue
-      WiFiClient *client;
-      xQueueReceive (streamingClients, (void*) &client, 0);
+      // pop un cliente desde el frente de la colaqueue
+      WiFiClient* client;
+      xQueueReceive(streamingClients, (void*)&client, 0);
 
       // Compruebe si este cliente todavía está conectado.
 
       if (!client->connected()) {
         // elimina esta referencia de cliente si se ha desconectado
-         // y no lo vuelvas a poner en la cola nunca más. ¡Adiós!
+        // y no lo vuelvas a poner en la cola nunca más. ¡Adiós!
         delete client;
-      }
-      else {
+      } else {
 
         //  OK. Este es un cliente conectado activamente.
-         // Tomemos un semáforo para evitar cambios de marco mientras
-         // están sirviendo este marco
-        xSemaphoreTake( frameSync, portMAX_DELAY );
+        // Tomemos un semáforo para evitar cambios de marco mientras
+        // están sirviendo este marco
+        xSemaphoreTake(frameSync, portMAX_DELAY);
 
         client->write(CTNTTYPE, cntLen);
         sprintf(buf, "%d\r\n\r\n", camSize);
         client->write(buf, strlen(buf));
-        client->write((char*) camBuf, (size_t)camSize);
+        client->write((char*)camBuf, (size_t)camSize);
         client->write(BOUNDARY, bdrLen);
 
         // Dado que este cliente aún está conectado, empújelo hasta el final
-         // de la cola para su posterior procesamiento
-        xQueueSend(streamingClients, (void *) &client, 0);
+        // de la cola para su posterior procesamiento
+        xQueueSend(streamingClients, (void*)&client, 0);
 
         // El marco ha sido servido. Suelte el semáforo y deje que se ejecuten otras tareas.
-         // Si hay un cambio de cuadro listo, sucederá ahora entre cuadros
-        xSemaphoreGive( frameSync );
+        // Si hay un cambio de cuadro listo, sucederá ahora entre cuadros
+        xSemaphoreGive(frameSync);
         taskYIELD();
       }
-    }
-    else {
+    } else {
       // Dado que no hay clientes conectados, no hay razón para desperdiciar la batería funcionando
       vTaskSuspend(NULL);
     }
@@ -294,20 +297,25 @@ void streamCB(void * pvParameters) {
 
 
 
-const char JHEADER[] = "HTTP/1.1 200 OK\r\n" \
-                       "Content-disposition: inline; filename=capture.jpg\r\n" \
+const char JHEADER[] = "HTTP/1.1 200 OK\r\n"
+                       "Content-disposition: inline; filename=capture.jpg\r\n"
                        "Content-type: image/jpeg\r\n\r\n";
 const int jhdLen = strlen(JHEADER);
 
-const char JHEADER2[] = "HTTP/1.1 200 OK\r\n" \
-                       "Content-type: text/plain\r\n\r\n";
+const char JHEADER2[] = "HTTP/1.1 200 OK\r\n"
+                        "Content-type: text/plain\r\n\r\n";
 const int jhdLen2 = strlen(JHEADER2);
 
 // ==== Serve up one JPEG frame =============================================
-void handleJPG(void)
-{
+void handleJPG(void) {
   WiFiClient client = server.client();
-
+  String key = server.header("key");
+  if (!compararPasswords(passwordESP, key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
   if (!client.connected()) return;
   cam.run();
   client.write(JHEADER, jhdLen);
@@ -316,8 +324,7 @@ void handleJPG(void)
 }
 
 // ==== Handle invalid URL requests ============================================
-void handleNotFound()
-{
+void handleNotFound() {
   String message = "Server is running!\n\n";
   message += "URI: ";
   message += server.uri();
@@ -329,8 +336,8 @@ void handleNotFound()
   server.send(200, "text / plain", message);
 }
 
-void setup_cam(){
-  
+void setup_cam() {
+
 
   // Configurar la cámara
   camera_config_t config;
@@ -372,8 +379,8 @@ void setup_cam(){
     Serial.println("Error initializing the camera");
     delay(10000);
     ESP.restart();
-  }    
-    xTaskCreatePinnedToCore(
+  }
+  xTaskCreatePinnedToCore(
     mjpegCB,
     "mjpeg",
     4 * 1024,
@@ -381,5 +388,4 @@ void setup_cam(){
     2,
     &tMjpeg,
     APP_CPU);
-
 }

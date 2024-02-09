@@ -14,12 +14,9 @@
 //#define CAMERA_MODEL_M5STACK_WIDE
 #define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
+extern const char *passwordESP;
 
-
-// ===== identificadores de tareas rtos =========================
-// Streaming se implementa con 3 tareas:
-
-
+bool compararPasswords(const char *inputPassword, String hashComparar);
 void mjpegCB(void* pvParameters);
 void camCB(void* pvParameters);
 char* allocateMemory(char* aPtr, size_t aSize);

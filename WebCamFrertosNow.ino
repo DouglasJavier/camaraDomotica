@@ -6,11 +6,15 @@
 #include <EEPROM.h>
 #include <HTTPClient.h>
 #include <SPIFFS.h>
+#include <mbedtls/sha256.h>
+
 const char *ssid = "COLQUE";
 const char *password = "A9S8D7F6XYZ";
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
 const char *serverAddress = "http://192.168.0.18:5000/historialIncidentes";
+const char *passwordESP = "your_password";
+unsigned char hash[32];
 
 WebServer server(80);
 uint8_t broadcastAddress[] = { 0xEC, 0x62, 0x60, 0x93, 0x02, 0x60 };
@@ -35,6 +39,7 @@ TaskHandle_t tSensor;  // maneja entradas
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
+  cifrarSHA256(passwordESP, strlen(passwordESP), hash);
   setup_wifi();
   server.on("/conf_pin", HTTP_POST, handlePostSensorActuador);
   server.on("/actuador", HTTP_POST, handleActuador);
@@ -67,7 +72,13 @@ void handlePostSensorActuador() {
   Serial.begin(115200);
   /* Serial.println("Entró aqui"); */
   String json = server.arg("plain");
-
+  String key = server.header("key");
+  if (!compararPasswords(passwordESP, key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
   DynamicJsonDocument doc(1024);
   DeserializationError error = deserializeJson(doc, json);
   if (error) {
@@ -121,6 +132,13 @@ void handlePostSensoresActivos() {
   // Obtener el cuerpo de la solicitud POST
   Serial.begin(115200);
   /*  Serial.println("Entró aqui") */;
+  String key = server.header("key");
+  if (!compararPasswords(passwordESP, key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
   String json = server.arg("plain");
 
   DynamicJsonDocument doc(1024);
@@ -342,7 +360,13 @@ void leerSensor(void *parameters) {
 }
 void handleActuador() {
   String json = server.arg("plain");
-
+  String key = server.header("key");
+  if (!compararPasswords(passwordESP, key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
   DynamicJsonDocument doc(1024);
   DeserializationError error = deserializeJson(doc, json);
   if (error) {
@@ -451,7 +475,7 @@ void setup_wifi() {
 }
 
 void activarAlumbradoAutomatico(int pin, int estado) {
-  int  ubicacion = buscarUbicacion(pin);
+  int ubicacion = buscarUbicacion(pin);
   int tam = sizeof(pinInfoList) / sizeof(pinInfoList[0]);
   for (int i = 0; i < tam; i++) {
     PinInfo pin = pinInfoList[i];
@@ -465,8 +489,8 @@ int buscarUbicacion(int pin) {
   int tam = sizeof(pinInfoList) / sizeof(pinInfoList[0]);
   int ubicacion = 0;
   for (int i = 0; i < tam; i++) {
-    if(pinInfoList[i].pin == pin)
-    ubicacion = pinInfoList[i].idUbicacion;
+    if (pinInfoList[i].pin == pin)
+      ubicacion = pinInfoList[i].idUbicacion;
   }
   return ubicacion;
 }
@@ -518,4 +542,28 @@ void imprimirPinInfoList() {
     Serial.print("ID de Ubicación: ");
     Serial.println(pinInfo.idUbicacion);
   }
+}
+
+
+void cifrarSHA256(const char *pass, size_t length, unsigned char output[32]) {
+  mbedtls_sha256_context sha256Context;
+  mbedtls_sha256_init(&sha256Context);
+  mbedtls_sha256_starts_ret(&sha256Context, 0);  // 0 for SHA-256
+
+  mbedtls_sha256_update_ret(&sha256Context, (const unsigned char *)pass, length);
+  mbedtls_sha256_finish_ret(&sha256Context, output);
+
+  mbedtls_sha256_free(&sha256Context);
+}
+
+bool compararPasswords(const char *inputPassword, String hashComparar) {
+  const char *hashOriginal = hashComparar.c_str();
+  unsigned char inputHash[32];
+  cifrarSHA256(inputPassword, strlen(inputPassword), inputHash);
+  for (int i = 0; i < 32; i++) {
+    if (inputHash[i] != hashOriginal[i]) {
+      return false;
+    }
+  }
+  return true;
 }
