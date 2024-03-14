@@ -1,5 +1,6 @@
 
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include "camera_freertos.h"
 #include "soc/rtc_cntl_reg.h"
 #include "ArduinoJson.h"
@@ -7,14 +8,25 @@
 #include <HTTPClient.h>
 #include <SPIFFS.h>
 #include <mbedtls/sha256.h>
+#include "esp_heap_caps.h"
 
 const char *ssid = "COLQUE";
 const char *password = "A9S8D7F6XYZ";
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
-const char *serverAddress = "http://192.168.0.18:5000/historialIncidentes";
+/* const char *ssid = "AGETIC01";
+const char *password = "03r1XY6mOT$"; */
+IPAddress ip(192, 168, 0, 200);      // Asigna la IP estática deseada
+IPAddress gateway(192, 168, 28, 1);  // Asigna la puerta de enlace (router)
+IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
+/* IPAddress ip(192, 168, 29, 200);     // Asigna la IP estática deseada
+IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
+IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
+
+const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
 const char *passwordESP = "your_password";
-unsigned char hash[32];
+char hash[65];
+String hashString;
 
 WebServer server(80);
 uint8_t broadcastAddress[] = { 0xEC, 0x62, 0x60, 0x93, 0x02, 0x60 };
@@ -35,15 +47,17 @@ String idDispositivo;
 boolean alumbradoAutomatico;
 
 //devolucion de la llamada cuando se envian datos
-TaskHandle_t tSensor;  // maneja entradas
+TaskHandle_t tSensor;           // maneja entradas
+TaskHandle_t tVerificar;  // maneja la reconeccion
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
-  cifrarSHA256(passwordESP, strlen(passwordESP), hash);
+  cifrarSHA256(passwordESP, strlen(passwordESP), hashString);
   setup_wifi();
   server.on("/conf_pin", HTTP_POST, handlePostSensorActuador);
   server.on("/actuador", HTTP_POST, handleActuador);
   server.on("/sensores", HTTP_POST, handlePostSensoresActivos);
+  server.on("/reiniciar", HTTP_POST, handleReiniciar);
   setup_cam();
   server.begin();
   if (!SPIFFS.begin(true)) {
@@ -58,10 +72,18 @@ void setup() {
   xTaskCreatePinnedToCore(
     leerSensor,
     "Sensores",
-    2 * 1024,
+    3 * 1024,
     NULL,
     2,
     &tSensor,
+    1);
+  xTaskCreatePinnedToCore(
+    verificarEstado,
+    "Verificar",
+    2 * 1024,
+    NULL,
+    2,
+    &tVerificar,
     1);
 }
 void loop() {
@@ -72,8 +94,8 @@ void handlePostSensorActuador() {
   Serial.begin(115200);
   /* Serial.println("Entró aqui"); */
   String json = server.arg("plain");
-  String key = server.header("key");
-  if (!compararPasswords(passwordESP, key)) {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
     Serial.println("Desautorizado");
     String response = "{\"message\":\"Desautorizado\"}";
     server.send(401, "application/json", response);
@@ -132,8 +154,8 @@ void handlePostSensoresActivos() {
   // Obtener el cuerpo de la solicitud POST
   Serial.begin(115200);
   /*  Serial.println("Entró aqui") */;
-  String key = server.header("key");
-  if (!compararPasswords(passwordESP, key)) {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
     Serial.println("Desautorizado");
     String response = "{\"message\":\"Desautorizado\"}";
     server.send(401, "application/json", response);
@@ -330,7 +352,6 @@ void cargarSensoresActivosDesdeArchivo() {
 }
 void leerSensor(void *parameters) {
   while (1) {
-
     unsigned long ultimaHoraEnviada = 0;
     for (SensorInfo &sensorInfo : sensoresActivos) {
       //Serial.println("leendo sensor");
@@ -353,15 +374,34 @@ void leerSensor(void *parameters) {
       if ((sensorInfo.detecciones >= 100) && (millis() - ultimaHoraEnviada >= 30000)) {
         sendSensorData(sensorInfo);
         sensorInfo.detecciones = 0;  // Reiniciar el contador después de enviar
-        delay(30000);
+        vTaskDelay(pdMS_TO_TICKS(30000));
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(30));
   }
 }
+
+void verificarEstado(void* pvParameters) {
+  while (1) {
+    Serial.println("entro aqui");
+    if (WiFi.status() != WL_CONNECTED) {
+       Serial.println("WiFi reconnecting...");
+      setup_wifi();
+    } else {
+      Serial.println("WiFi aun conectado");
+    }
+    size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    Serial.print("Free RAM after initialization: ");
+    Serial.println(freeRAM); 
+    //delay(10000);  // Delay to avoid constant checking
+    vTaskDelay(pdMS_TO_TICKS(60000));
+  }
+}
+
 void handleActuador() {
   String json = server.arg("plain");
-  String key = server.header("key");
-  if (!compararPasswords(passwordESP, key)) {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
     Serial.println("Desautorizado");
     String response = "{\"message\":\"Desautorizado\"}";
     server.send(401, "application/json", response);
@@ -409,6 +449,18 @@ void handleActuador() {
   // Enviar una respuesta JSON de confirmación
   String response = "{\"message\":\"Acción realizada correctamente\"}";
   server.send(200, "application/json", response);
+}
+void handleReiniciar() {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
+  String response = "{\"message\":\"Acción realizada correctamente\"}";
+  server.send(200, "application/json", response);
+  ESP.restart();
 }
 void sendSensorData(SensorInfo &sensorInfo) {
   StaticJsonDocument<64> jsonData;
@@ -461,7 +513,10 @@ void setup_wifi() {
   Serial.println("Conectando a :");
   Serial.println(ssid);
   WiFi.mode(WIFI_STA);
+  //WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  esp_wifi_set_ps(WIFI_PS_NONE);
   WiFi.begin(ssid, password);
+  WiFi.config(ip, gateway, subnet);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -544,26 +599,38 @@ void imprimirPinInfoList() {
   }
 }
 
-
-void cifrarSHA256(const char *pass, size_t length, unsigned char output[32]) {
+void cifrarSHA256(const char *pass, size_t length, String &hashString) {
   mbedtls_sha256_context sha256Context;
   mbedtls_sha256_init(&sha256Context);
   mbedtls_sha256_starts_ret(&sha256Context, 0);  // 0 for SHA-256
 
   mbedtls_sha256_update_ret(&sha256Context, (const unsigned char *)pass, length);
+  unsigned char output[32];
   mbedtls_sha256_finish_ret(&sha256Context, output);
 
   mbedtls_sha256_free(&sha256Context);
+
+  for (int i = 0; i < sizeof(output); i++) {
+    hashString += (output[i] < 0x10 ? "0" : "") + String(output[i], HEX);
+  }
 }
 
-bool compararPasswords(const char *inputPassword, String hashComparar) {
-  const char *hashOriginal = hashComparar.c_str();
-  unsigned char inputHash[32];
-  cifrarSHA256(inputPassword, strlen(inputPassword), inputHash);
-  for (int i = 0; i < 32; i++) {
-    if (inputHash[i] != hashOriginal[i]) {
-      return false;
-    }
+/* void imprimirEstadoMemoria() {
+  Serial.println("Estado de la Memoria RAM:");
+  Serial.print("RAM Libre: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(" bytes | ");
+  Serial.print("RAM Utilizada: ");
+  Serial.print(ESP.getMaxAllocHeap());
+  Serial.print(" bytes | ");
+  Serial.print("Memoria total: ");
+  Serial.print(ESP.getHeapSize());
+  Serial.println(" bytes");
+} */
+
+bool compararPasswords(String hashComparar) {
+  if (hashString != hashComparar) {
+    return false;
   }
   return true;
 }

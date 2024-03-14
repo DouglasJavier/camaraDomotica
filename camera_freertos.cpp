@@ -43,7 +43,7 @@ void mjpegCB(void* pvParameters) {
   xTaskCreatePinnedToCore(
     camCB,     // callback
     "cam",     // name
-    4096,      // stacj size
+    6 * 1024,      // stacj size
     NULL,      // parameters
     2,         // priority
     &tCam,     // RTOS task handle
@@ -53,7 +53,7 @@ void mjpegCB(void* pvParameters) {
   xTaskCreatePinnedToCore(
     streamCB,
     "strmCB",
-    4 * 1024,
+    6 * 1024,
     NULL,  //(void*) handler,
     2,
     &tStream,
@@ -200,8 +200,8 @@ const int cntLen = strlen(CTNTTYPE);
 
 // ==== Manejar la solicitud de conexión de los clientes ===============================
 void handleJPGSstream(void) {
-  String key = server.header("key");
-  if (!compararPasswords(passwordESP, key)) {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
     Serial.println("Desautorizado");
     String response = "{\"message\":\"Desautorizado\"}";
     server.send(401, "application/json", response);
@@ -309,8 +309,8 @@ const int jhdLen2 = strlen(JHEADER2);
 // ==== Serve up one JPEG frame =============================================
 void handleJPG(void) {
   WiFiClient client = server.client();
-  String key = server.header("key");
-  if (!compararPasswords(passwordESP, key)) {
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
     Serial.println("Desautorizado");
     String response = "{\"message\":\"Desautorizado\"}";
     server.send(401, "application/json", response);
@@ -361,10 +361,12 @@ void setup_cam() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
+  //config.pixel_format = PIXFORMAT_GRAYSCALE;
 
   // Frame parameters: pick one
-  //  config.frame_size = FRAMESIZE_UXGA;
-  config.frame_size = FRAMESIZE_SVGA;
+  // config.frame_size = FRAMESIZE_UXGA;
+  config.frame_size = FRAMESIZE_SXGA;
+  //config.frame_size = FRAMESIZE_SVGA;
   //  config.frame_size = FRAMESIZE_QVGA;
   /* config.frame_size = FRAMESIZE_VGA; */
   config.jpeg_quality = 12;
@@ -383,7 +385,7 @@ void setup_cam() {
   xTaskCreatePinnedToCore(
     mjpegCB,
     "mjpeg",
-    4 * 1024,
+    6 * 1024,
     NULL,
     2,
     &tMjpeg,

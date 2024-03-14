@@ -16,7 +16,7 @@
 #include "camera_pins.h"
 extern const char *passwordESP;
 
-bool compararPasswords(const char *inputPassword, String hashComparar);
+bool compararPasswords(String hashComparar);
 void mjpegCB(void* pvParameters);
 void camCB(void* pvParameters);
 char* allocateMemory(char* aPtr, size_t aSize);
