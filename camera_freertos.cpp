@@ -23,7 +23,7 @@ const int FPS = 14;
 
 // Manejaremos solicitudes de clientes web cada 50 ms (20 Hz)
 const int WSINTERVAL = 100;
-
+volatile int numClients = 0;
 
 // ======== Tarea del controlador de conexión del servidor ==========================
 void mjpegCB(void* pvParameters) {
@@ -45,7 +45,7 @@ void mjpegCB(void* pvParameters) {
     "cam",     // name
     6 * 1024,      // stacj size
     NULL,      // parameters
-    2,         // priority
+    5,         // priority
     &tCam,     // RTOS task handle
     APP_CPU);  // core
 
@@ -55,7 +55,7 @@ void mjpegCB(void* pvParameters) {
     "strmCB",
     6 * 1024,
     NULL,  //(void*) handler,
-    2,
+    5,
     &tStream,
     APP_CPU);
 
@@ -207,6 +207,9 @@ void handleJPGSstream(void) {
     server.send(401, "application/json", response);
     return;
   }
+  int queueSize =  uxQueueMessagesWaiting(streamingClients);
+    Serial.print("Tamaño de la cola: ");
+    Serial.println(queueSize);
   // Solo puede acomodar 10 clientes. El límite es un valor predeterminado para las conexiones WiFi
   if (!uxQueueSpacesAvailable(streamingClients)) return;
 
@@ -387,7 +390,7 @@ void setup_cam() {
     "mjpeg",
     6 * 1024,
     NULL,
-    2,
+    5,
     &tMjpeg,
     APP_CPU);
 }

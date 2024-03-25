@@ -19,11 +19,12 @@ const char *password = "03r1XY6mOT$"; */
 IPAddress ip(192, 168, 0, 200);      // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 28, 1);  // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
-/* IPAddress ip(192, 168, 29, 200);     // Asigna la IP estática deseada
+/* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
-const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
+//const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
+const char *serverAddress = "http://192.168.0.17:5000/historialIncidentes";
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
@@ -40,14 +41,16 @@ struct PinInfo {
 struct SensorInfo {
   int pin;
   int detecciones;
+  String tipoSalida;
 };
 std::vector<PinInfo> pinInfoList;
 std::vector<SensorInfo> sensoresActivos;
 String idDispositivo;
 boolean alumbradoAutomatico;
+boolean enviarReporte;
 
 //devolucion de la llamada cuando se envian datos
-TaskHandle_t tSensor;           // maneja entradas
+TaskHandle_t tSensor;     // maneja entradas
 TaskHandle_t tVerificar;  // maneja la reconeccion
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -82,7 +85,7 @@ void setup() {
     "Verificar",
     2 * 1024,
     NULL,
-    2,
+    1,
     &tVerificar,
     1);
 }
@@ -126,7 +129,12 @@ void handlePostSensorActuador() {
     Serial.println(tipo);
     // Configurar el pin según el tipo (SENSOR o ACTUADOR)
     if (tipo == "SENSOR") {
-      pinMode(pin, INPUT);
+      if (descripcion == "MQ-7" || descripcion == "MQ-2") {
+        Serial.println("sensor puul up");
+        pinMode(pin, INPUT_PULLUP);
+      } else {
+        pinMode(pin, INPUT_PULLDOWN);
+      }
     } else if (tipo == "ACTUADOR") {
       pinMode(pin, OUTPUT);
     } else {
@@ -173,11 +181,13 @@ void handlePostSensoresActivos() {
   // Obtener el arreglo de sensores y actuadores
   JsonArray sensoresActuadores = doc["sensoresActuadores"].as<JsonArray>();
   alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
+  enviarReporte = doc["enviarReporte"].as<boolean>();
 
   // Recorrer el arreglo y configurar los pines
   Serial.println("Pines de senores que deben activarse: ");
   for (JsonObject item : sensoresActuadores) {
     int pin = item["pin"].as<int>();
+    String tipoSalida = item["tipoSalida"].as<String>();
     /* Serial.println("Entro al bucle"); */
     // Configurar el pin según el tipo (SENSOR o ACTUADOR)
     // Crear una instancia de PinInfo y agregarla al vector
@@ -185,6 +195,7 @@ void handlePostSensoresActivos() {
     Serial.println(pin);
     SensorInfo sensorInfo;
     sensorInfo.pin = pin;
+    sensorInfo.tipoSalida = tipoSalida;
     sensorInfo.detecciones = 0;
     sensoresActivos.push_back(sensorInfo);
   }
@@ -248,6 +259,7 @@ void guardarSensoresActivosEnArchivo() {
   // Crear un objeto JSON para almacenar la configuración
   DynamicJsonDocument configDoc(1024);
   configDoc["alumbradoAutomatico"] = alumbradoAutomatico;
+  configDoc["enviarReporte"] = enviarReporte;
 
   // Crear un arreglo JSON para los pines
   JsonArray pinArray = configDoc.createNestedArray("pines");
@@ -256,6 +268,7 @@ void guardarSensoresActivosEnArchivo() {
   for (const SensorInfo &pinInfo : sensoresActivos) {
     JsonObject pinConfig = pinArray.createNestedObject();
     pinConfig["pin"] = pinInfo.pin;
+    pinConfig["tipoSalida"] = pinInfo.tipoSalida;
     pinConfig["detecciones"] = pinInfo.detecciones;
   }
 
@@ -304,7 +317,13 @@ void cargarConfiguracionDesdeArchivo() {
       Serial.println(pinInfo.tipo);
       // Configurar el pin según el tipo (SENSOR o ACTUADOR)
       if (pinInfo.tipo == "SENSOR") {
-        pinMode(pinInfo.pin, INPUT);
+
+        if (pinInfo.descripcion == "MQ-7" || pinInfo.descripcion == "MQ-2") {
+          pinMode(pinInfo.pin, INPUT_PULLUP);
+
+        } else {
+          pinMode(pinInfo.pin, INPUT_PULLDOWN);
+        }
       } else if (pinInfo.tipo == "ACTUADOR") {
         pinMode(pinInfo.pin, OUTPUT);
       } else {
@@ -337,6 +356,7 @@ void cargarSensoresActivosDesdeArchivo() {
   if (!error) {
     // Obtener el arreglo de pines
     alumbradoAutomatico = configDoc["alumbradoAutomatico"].as<boolean>();
+    enviarReporte = configDoc["enviarReporte"].as<boolean>();
 
     JsonArray pinArray = configDoc["pines"].as<JsonArray>();
 
@@ -344,6 +364,7 @@ void cargarSensoresActivosDesdeArchivo() {
     for (JsonObject pinConfig : pinArray) {
       SensorInfo sensorInfo;
       sensorInfo.pin = pinConfig["pin"];
+      sensorInfo.tipoSalida = pinConfig["tipoSalida"];
       sensorInfo.detecciones = pinConfig["detecciones"];
       // Agregar el pin a la lista
       sensoresActivos.push_back(sensorInfo);
@@ -358,7 +379,7 @@ void leerSensor(void *parameters) {
       // Verificar si el pin de sensor está activo (cambiar según tu lógica)
       int valorSensor = digitalRead(sensorInfo.pin);
       if (valorSensor == HIGH) {
-        if ((sensorInfo.detecciones < 100) && (millis() - ultimaHoraEnviada >= 30000)) {
+        if ((sensorInfo.detecciones < 10) && (millis() - ultimaHoraEnviada >= 30000)) {
           sensorInfo.detecciones = sensorInfo.detecciones + 1;  // Incrementar el contador de detecciones
           Serial.print(sensorInfo.detecciones);
           Serial.println("..SI");
@@ -367,32 +388,31 @@ void leerSensor(void *parameters) {
         sensorInfo.detecciones = 0;  // Reiniciar el contador si no se detecta nada
       } */
 
-      // Si se detecta tres veces, enviar JSON
       if (alumbradoAutomatico) {
         activarAlumbradoAutomatico(sensorInfo.pin, valorSensor);
       }
-      if ((sensorInfo.detecciones >= 100) && (millis() - ultimaHoraEnviada >= 30000)) {
+      if ((sensorInfo.detecciones >= 10) && (millis() - ultimaHoraEnviada >= 30000) && enviarReporte) {
         sendSensorData(sensorInfo);
         sensorInfo.detecciones = 0;  // Reiniciar el contador después de enviar
         vTaskDelay(pdMS_TO_TICKS(30000));
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(30));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
-void verificarEstado(void* pvParameters) {
+void verificarEstado(void *pvParameters) {
   while (1) {
     Serial.println("entro aqui");
     if (WiFi.status() != WL_CONNECTED) {
-       Serial.println("WiFi reconnecting...");
+      Serial.println("WiFi reconnecting...");
       setup_wifi();
     } else {
       Serial.println("WiFi aun conectado");
     }
     size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     Serial.print("Free RAM after initialization: ");
-    Serial.println(freeRAM); 
+    Serial.println(freeRAM);
     //delay(10000);  // Delay to avoid constant checking
     vTaskDelay(pdMS_TO_TICKS(60000));
   }
@@ -474,6 +494,7 @@ void sendSensorData(SensorInfo &sensorInfo) {
 
   // Configurar las cabeceras de la solicitud
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("key", hashString);
 
   // Convertir el JSON a una cadena
   String jsonStr;
@@ -531,7 +552,7 @@ void setup_wifi() {
 
 void activarAlumbradoAutomatico(int pin, int estado) {
   int ubicacion = buscarUbicacion(pin);
-  int tam = sizeof(pinInfoList) / sizeof(pinInfoList[0]);
+  int tam = pinInfoList.size();
   for (int i = 0; i < tam; i++) {
     PinInfo pin = pinInfoList[i];
     if (pin.descripcion == "FOCO" && pin.idUbicacion == ubicacion) {
@@ -541,7 +562,7 @@ void activarAlumbradoAutomatico(int pin, int estado) {
 }
 
 int buscarUbicacion(int pin) {
-  int tam = sizeof(pinInfoList) / sizeof(pinInfoList[0]);
+  int tam = pinInfoList.size();
   int ubicacion = 0;
   for (int i = 0; i < tam; i++) {
     if (pinInfoList[i].pin == pin)
