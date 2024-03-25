@@ -35,6 +35,7 @@ uint8_t broadcastAddress[] = { 0xEC, 0x62, 0x60, 0x93, 0x02, 0x60 };
 struct PinInfo {
   int pin;
   String tipo;
+  String tipoSalida;
   String descripcion;
   int idUbicacion;
 };
@@ -121,6 +122,7 @@ void handlePostSensorActuador() {
   for (JsonObject item : sensoresActuadores) {
     int pin = item["pin"].as<int>();
     String tipo = item["tipo"].as<String>();
+    String tipoSalida = item["tipoSalida"].as<String>();
     String descripcion = item["descripcion"].as<String>();
     int idUbicacion = item["idUbicacion"].as<int>();
     Serial.print("Pin : ");
@@ -129,8 +131,8 @@ void handlePostSensorActuador() {
     Serial.println(tipo);
     // Configurar el pin según el tipo (SENSOR o ACTUADOR)
     if (tipo == "SENSOR") {
-      if (descripcion == "MQ-7" || descripcion == "MQ-2") {
-        Serial.println("sensor puul up");
+      if (tipoSalida == "pullUp") {
+        Serial.println("sensor pull up");
         pinMode(pin, INPUT_PULLUP);
       } else {
         pinMode(pin, INPUT_PULLDOWN);
@@ -146,6 +148,7 @@ void handlePostSensorActuador() {
     PinInfo pinInfo;
     pinInfo.pin = pin;
     pinInfo.tipo = tipo;
+    pinInfo.tipoSalida = tipoSalida;
     pinInfo.descripcion = descripcion;
     pinInfo.idUbicacion = idUbicacion;
     pinInfoList.push_back(pinInfo);
@@ -229,6 +232,7 @@ void guardarConfiguracionEnArchivo() {
     JsonObject pinConfig = pinArray.createNestedObject();
     pinConfig["pin"] = pinInfo.pin;
     pinConfig["tipo"] = pinInfo.tipo;
+    pinConfig["tipoSalida"] = pinInfo.tipoSalida;
     pinConfig["descripcion"] = pinInfo.descripcion;
     pinConfig["idUbicacion"] = pinInfo.idUbicacion;
   }
@@ -309,6 +313,7 @@ void cargarConfiguracionDesdeArchivo() {
       PinInfo pinInfo;
       pinInfo.pin = pinConfig["pin"];
       pinInfo.tipo = pinConfig["tipo"].as<String>();
+      pinInfo.tipoSalida = pinConfig["tipoSalida"].as<String>();
       pinInfo.descripcion = pinConfig["descripcion"].as<String>();
       pinInfo.idUbicacion = pinConfig["idUbicacion"];
 
@@ -364,7 +369,7 @@ void cargarSensoresActivosDesdeArchivo() {
     for (JsonObject pinConfig : pinArray) {
       SensorInfo sensorInfo;
       sensorInfo.pin = pinConfig["pin"];
-      sensorInfo.tipoSalida = pinConfig["tipoSalida"];
+      sensorInfo.tipoSalida = pinConfig["tipoSalida"].as<String>();
       sensorInfo.detecciones = pinConfig["detecciones"];
       // Agregar el pin a la lista
       sensoresActivos.push_back(sensorInfo);
@@ -378,7 +383,7 @@ void leerSensor(void *parameters) {
       //Serial.println("leendo sensor");
       // Verificar si el pin de sensor está activo (cambiar según tu lógica)
       int valorSensor = digitalRead(sensorInfo.pin);
-      if (valorSensor == HIGH) {
+      if ((valorSensor == HIGH && sensorInfo.tipoSalida == "pullDown") || (valorSensor == LOW && sensorInfo.tipoSalida == "pullUp")) {
         if ((sensorInfo.detecciones < 10) && (millis() - ultimaHoraEnviada >= 30000)) {
           sensorInfo.detecciones = sensorInfo.detecciones + 1;  // Incrementar el contador de detecciones
           Serial.print(sensorInfo.detecciones);
@@ -613,6 +618,8 @@ void imprimirPinInfoList() {
     Serial.println(pinInfo.pin);
     Serial.print("Tipo: ");
     Serial.println(pinInfo.tipo);
+    Serial.print("Tipo salida: ");
+    Serial.println(pinInfo.tipoSalida);
     Serial.print("Descripción: ");
     Serial.println(pinInfo.descripcion);
     Serial.print("ID de Ubicación: ");
