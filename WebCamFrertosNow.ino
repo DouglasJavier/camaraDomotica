@@ -17,14 +17,14 @@ const char *password = "rshniq4rwwfkqd7"; */
 /* const char *ssid = "AGETIC01";
 const char *password = "03r1XY6mOT$"; */
 IPAddress ip(192, 168, 0, 200);      // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 28, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
+IPAddress gateway(192, 168, 0, 1);  // Asigna la puerta de enlace (router)
+IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
 /* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
 //const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
-const char *serverAddress = "http://192.168.0.17:5000/historialIncidentes";
+const char *serverAddress = "http://192.168.0.18:5000/historialIncidentes";
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
@@ -389,10 +389,10 @@ void leerSensor(void *parameters) {
           Serial.print(sensorInfo.detecciones);
           Serial.println("..SI");
         }
-      } /*  else {
+        /*  else {
         sensorInfo.detecciones = 0;  // Reiniciar el contador si no se detecta nada
       } */
-
+      }
       if (alumbradoAutomatico) {
         activarAlumbradoAutomatico(sensorInfo.pin, valorSensor);
       }
@@ -570,7 +570,7 @@ int buscarUbicacion(int pin) {
   int tam = pinInfoList.size();
   int ubicacion = 0;
   for (int i = 0; i < tam; i++) {
-    if (pinInfoList[i].pin == pin)
+    if ((pinInfoList[i].pin == pin) && (pinInfoList[i].descripcion == "PIR"))
       ubicacion = pinInfoList[i].idUbicacion;
   }
   return ubicacion;
