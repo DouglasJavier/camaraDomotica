@@ -10,21 +10,21 @@
 #include <mbedtls/sha256.h>
 #include "esp_heap_caps.h"
 
-const char *ssid = "COLQUE";
-const char *password = "A9S8D7F6XYZ";
+/* const char *ssid = "SR COLQUE";
+const char *password = "a9s8d7f6XYZ"; */
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
-/* const char *ssid = "AGETIC01";
-const char *password = "03r1XY6mOT$"; */
-IPAddress ip(192, 168, 0, 200);      // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 0, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
-/* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
+const char *ssid = "AGETIC01";
+const char *password = "03r1XY6mOT$";
+/* IPAddress ip(192, 168, 1, 203);      // Asigna la IP estática deseada
+IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
+IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred */
+IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
+IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
 
-//const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
-const char *serverAddress = "http://192.168.0.18:5000/historialIncidentes";
+const char *serverAddress = "http://192.168.29.127:5000/historialIncidentes";
+//const char *serverAddress = "http://192.168.1.15:5000/historialIncidentes";
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
@@ -202,7 +202,9 @@ void handlePostSensoresActivos() {
     sensorInfo.detecciones = 0;
     sensoresActivos.push_back(sensorInfo);
   }
-
+  if (!alumbradoAutomatico) {
+    apagarAlumbradoAutomatico();
+  }
   guardarSensoresActivosEnArchivo();
   imprimirSensoresActivosArchivo();
   // Enviar una respuesta JSON de confirmación
@@ -463,9 +465,9 @@ void handleActuador() {
 
   // Realizar la acción correspondiente
   if (accion == "ENCENDER") {
-    digitalWrite(pin, HIGH);  // Encender el actuador
+    digitalWrite(pin, LOW);  // Encender el actuador
   } else if (accion == "APAGAR") {
-    digitalWrite(pin, LOW);  // Apagar el actuador
+    digitalWrite(pin, HIGH);  // Apagar el actuador
   } else {
     server.send(400, "application/json", "{\"message\":\"Acción no válida\"}");
     return;
@@ -561,7 +563,21 @@ void activarAlumbradoAutomatico(int pin, int estado) {
   for (int i = 0; i < tam; i++) {
     PinInfo pin = pinInfoList[i];
     if (pin.descripcion == "FOCO" && pin.idUbicacion == ubicacion) {
-      digitalWrite(pin.pin, estado);
+      if (estado == LOW) {
+        digitalWrite(pin.pin, HIGH);
+      } else {
+        digitalWrite(pin.pin, LOW);
+      }
+    }
+  }
+}
+
+void apagarAlumbradoAutomatico() {
+  int tam = pinInfoList.size();
+  for (int i = 0; i < tam; i++) {
+    PinInfo pin = pinInfoList[i];
+    if (pin.descripcion == "FOCO") {
+      digitalWrite(pin.pin, HIGH);
     }
   }
 }
@@ -642,19 +658,6 @@ void cifrarSHA256(const char *pass, size_t length, String &hashString) {
     hashString += (output[i] < 0x10 ? "0" : "") + String(output[i], HEX);
   }
 }
-
-/* void imprimirEstadoMemoria() {
-  Serial.println("Estado de la Memoria RAM:");
-  Serial.print("RAM Libre: ");
-  Serial.print(ESP.getFreeHeap());
-  Serial.print(" bytes | ");
-  Serial.print("RAM Utilizada: ");
-  Serial.print(ESP.getMaxAllocHeap());
-  Serial.print(" bytes | ");
-  Serial.print("Memoria total: ");
-  Serial.print(ESP.getHeapSize());
-  Serial.println(" bytes");
-} */
 
 bool compararPasswords(String hashComparar) {
   if (hashString != hashComparar) {
