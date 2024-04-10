@@ -90,7 +90,7 @@ void setup() {
     NULL,
     2,
     &tSensor,
-    1);
+    0);
   xTaskCreatePinnedToCore(
     verificarEstado,
     "Verificar",
