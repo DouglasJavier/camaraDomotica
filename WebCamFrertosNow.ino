@@ -10,21 +10,23 @@
 #include <mbedtls/sha256.h>
 #include "esp_heap_caps.h"
 
-/* const char *ssid = "SR COLQUE";
-const char *password = "a9s8d7f6XYZ"; */
+const char *ssid = "SR COLQUE";
+const char *password = "a9s8d7f6XYZ";
+/* const char *ssid = "COLQUE";
+const char *password = "A9S8D7F6XYZ"; */
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
-const char *ssid = "AGETIC01";
-const char *password = "03r1XY6mOT$";
-/* IPAddress ip(192, 168, 1, 203);      // Asigna la IP estática deseada
+/* const char *ssid = "AGETIC01";
+const char *password = "03r1XY6mOT$"; */
+IPAddress ip(192, 168, 1, 202);      // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred */
-IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
+IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
+/* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
+IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
-const char *serverAddress = "http://192.168.29.127:5000/historialIncidentes";
-//const char *serverAddress = "http://192.168.1.15:5000/historialIncidentes";
+const char *serverAddress = "http://192.168.1.15:5000/historialIncidentes";
+/* const char *serverAddress = "https://domotica-backend-nestjs.onrender.com/historialIncidentes"; */
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
@@ -423,20 +425,15 @@ void verificarEstado(void *pvParameters) {
   while (1) {
     Serial.println("entro aqui");
     if (WiFi.status() != WL_CONNECTED) {
+      WiFi.disconnect();
       Serial.println("WiFi reconnecting...");
       setup_wifi();
-      server.on("/conf_pin", HTTP_POST, handlePostSensorActuador);
-      server.on("/actuador", HTTP_POST, handleActuador);
-      server.on("/sensores", HTTP_POST, handlePostSensoresActivos);
-      server.on("/reiniciar", HTTP_POST, handleReiniciar);
-      setup_cam();
-      server.begin();
     } else {
       Serial.println("WiFi aun conectado");
     }
-    size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    /* size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     Serial.print("Free RAM after initialization: ");
-    Serial.println(freeRAM);
+    Serial.println(freeRAM); */
     //delay(10000);  // Delay to avoid constant checking
     vTaskDelay(pdMS_TO_TICKS(60000));
   }
@@ -560,6 +557,7 @@ void setup_wifi() {
   WiFi.mode(WIFI_STA);
   //WiFi.setSleepMode(WIFI_NONE_SLEEP);
   esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.setSleep(0);
   WiFi.begin(ssid, password);
   WiFi.config(ip, gateway, subnet);
   while (WiFi.status() != WL_CONNECTED) {

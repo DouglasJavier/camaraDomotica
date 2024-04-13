@@ -390,7 +390,7 @@ void setup_cam() {
     "mjpeg",
     6 * 1024,
     NULL,
-    5,
+    6,
     &tMjpeg,
     APP_CPU);
 }
