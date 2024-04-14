@@ -18,7 +18,7 @@ const char *password = "A9S8D7F6XYZ"; */
 const char *password = "rshniq4rwwfkqd7"; */
 /* const char *ssid = "AGETIC01";
 const char *password = "03r1XY6mOT$"; */
-IPAddress ip(192, 168, 1, 202);      // Asigna la IP estática deseada
+IPAddress ip(192, 168, 1, 203);      // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
 /* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
@@ -71,6 +71,7 @@ void setup() {
   server.on("/conf_pin", HTTP_POST, handlePostSensorActuador);
   server.on("/actuador", HTTP_POST, handleActuador);
   server.on("/sensores", HTTP_POST, handlePostSensoresActivos);
+  server.on("/alumbradoAutomatico", HTTP_POST, handleAlumbradoAutomatico);
   server.on("/reiniciar", HTTP_POST, handleReiniciar);
   setup_cam();
   server.begin();
@@ -141,6 +142,8 @@ void handlePostSensorActuador() {
     Serial.print(pin);
     Serial.print(" ");
     Serial.println(tipo);
+    Serial.print(" ");
+    Serial.println(tipoSalida);
     // Configurar el pin según el tipo (SENSOR o ACTUADOR)
     if (tipo == "SENSOR") {
       if (tipoSalida == "pullUp") {
@@ -197,7 +200,6 @@ void handlePostSensoresActivos() {
   sensoresActivos.clear();
   // Obtener el arreglo de sensores y actuadores
   JsonArray sensoresActuadores = doc["sensoresActuadores"].as<JsonArray>();
-  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
   enviarReporte = doc["enviarReporte"].as<boolean>();
 
   // Recorrer el arreglo y configurar los pines
@@ -216,9 +218,7 @@ void handlePostSensoresActivos() {
     sensorInfo.detecciones = 0;
     sensoresActivos.push_back(sensorInfo);
   }
-  if (!alumbradoAutomatico) {
-    apagarAlumbradoAutomatico();
-  }
+  
   guardarSensoresActivosEnArchivo();
   imprimirSensoresActivosArchivo();
   // Enviar una respuesta JSON de confirmación
@@ -338,10 +338,9 @@ void cargarConfiguracionDesdeArchivo() {
       Serial.println(pinInfo.tipo);
       // Configurar el pin según el tipo (SENSOR o ACTUADOR)
       if (pinInfo.tipo == "SENSOR") {
-
-        if (pinInfo.descripcion == "MQ-7" || pinInfo.descripcion == "MQ-2") {
+        if (pinInfo.tipoSalida == "pullUp") {
+          Serial.println("sensor pull up");
           pinMode(pinInfo.pin, INPUT_PULLUP);
-
         } else {
           pinMode(pinInfo.pin, INPUT_PULLDOWN);
         }
@@ -413,7 +412,6 @@ void leerSensor(void *parameters) {
 
         if (alumbradoAutomatico) {
           activarAlumbradoAutomatico(sensorInfo.pin, valorSensor);
-          vTaskDelay(pdMS_TO_TICKS(10));
         }
       }
     }
@@ -491,6 +489,36 @@ void handleActuador() {
   String response = "{\"message\":\"Acción realizada correctamente\"}";
   server.send(200, "application/json", response);
 }
+
+void handleAlumbradoAutomatico() {
+  String json = server.arg("plain");
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, json);
+  if (error) {
+    server.send(400, "application/json", "{\"message\":\"Error en el JSON\"}");
+    return;
+  }
+
+  // Configuración alumbrado automatico JSON
+  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
+  Serial.println("Alumbrado automatico");
+  Serial.println(alumbradoAutomatico);
+  if (!alumbradoAutomatico) {
+    apagarAlumbradoAutomatico();
+  }
+  guardarSensoresActivosEnArchivo();
+  // Enviar una respuesta JSON de confirmación
+  String response = "{\"message\":\"Acción realizada correctamente\"}";
+  server.send(200, "application/json", response);
+}
+
 void handleReiniciar() {
   String key = server.header("Authorization").substring(7);
   if (!compararPasswords(key)) {
@@ -578,7 +606,12 @@ void activarAlumbradoAutomatico(int pin, int estado) {
       if (estado == LOW) {
         digitalWrite(sensorFoco.pinFoco, HIGH);
       } else {
-        digitalWrite(sensorFoco.pinFoco, HIGH);
+        Serial.print("alumbrado en ");
+        Serial.print(sensorFoco.pinFoco);
+        Serial.print(" ");
+        Serial.println(pin);
+
+        digitalWrite(sensorFoco.pinFoco, LOW);
       }
     }
   }
