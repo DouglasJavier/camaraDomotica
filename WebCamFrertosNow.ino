@@ -18,7 +18,7 @@ const char *password = "A9S8D7F6XYZ"; */
 const char *password = "rshniq4rwwfkqd7"; */
 /* const char *ssid = "AGETIC01";
 const char *password = "03r1XY6mOT$"; */
-IPAddress ip(192, 168, 1, 203);      // Asigna la IP estática deseada
+IPAddress ip(192, 168, 1, 202);      // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
 /* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
@@ -201,7 +201,7 @@ void handlePostSensoresActivos() {
   // Obtener el arreglo de sensores y actuadores
   JsonArray sensoresActuadores = doc["sensoresActuadores"].as<JsonArray>();
   enviarReporte = doc["enviarReporte"].as<boolean>();
-
+  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
   // Recorrer el arreglo y configurar los pines
   Serial.println("Pines de senores que deben activarse: ");
   for (JsonObject item : sensoresActuadores) {
@@ -218,7 +218,9 @@ void handlePostSensoresActivos() {
     sensorInfo.detecciones = 0;
     sensoresActivos.push_back(sensorInfo);
   }
-  
+  if (!alumbradoAutomatico) {
+    apagarAlumbradoAutomatico();
+  }
   guardarSensoresActivosEnArchivo();
   imprimirSensoresActivosArchivo();
   // Enviar una respuesta JSON de confirmación
@@ -227,6 +229,12 @@ void handlePostSensoresActivos() {
 }
 
 void guardarConfiguracionEnArchivo() {
+  if (SPIFFS.remove("/config.json.json")) {
+    Serial.println("Archivo config.json eliminado correctamente.");
+  } else {
+    Serial.println("No se pudo eliminar el archivo sensoresActivos.json.");
+  }
+
   // Abre el archivo en modo de escritura
   File configFile = SPIFFS.open("/config.json", "w");
   if (!configFile) {
@@ -610,7 +618,6 @@ void activarAlumbradoAutomatico(int pin, int estado) {
         Serial.print(sensorFoco.pinFoco);
         Serial.print(" ");
         Serial.println(pin);
-
         digitalWrite(sensorFoco.pinFoco, LOW);
       }
     }
