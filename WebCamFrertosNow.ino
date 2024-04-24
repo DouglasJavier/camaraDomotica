@@ -10,22 +10,22 @@
 #include <mbedtls/sha256.h>
 #include "esp_heap_caps.h"
 
-const char *ssid = "SR COLQUE";
-const char *password = "a9s8d7f6XYZ";
-/* const char *ssid = "COLQUE";
-const char *password = "A9S8D7F6XYZ"; */
+/* const char *ssid = "SR COLQUE";
+const char *password = "a9s8d7f6XYZ"; */
+const char *ssid = "COLQUE";
+const char *password = "A9S8D7F6XYZ";
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
 /* const char *ssid = "AGETIC01";
 const char *password = "03r1XY6mOT$"; */
-IPAddress ip(192, 168, 1, 202);      // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
+IPAddress ip(192, 168, 0, 202);      // Asigna la IP estática deseada
+IPAddress gateway(192, 168, 0, 1);   // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
 /* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
-const char *serverAddress = "http://192.168.1.15:5000/historialIncidentes";
+const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
 /* const char *serverAddress = "https://domotica-backend-nestjs.onrender.com/historialIncidentes"; */
 const char *passwordESP = "your_password";
 char hash[65];
@@ -354,6 +354,7 @@ void cargarConfiguracionDesdeArchivo() {
         }
       } else if (pinInfo.tipo == "ACTUADOR") {
         pinMode(pinInfo.pin, OUTPUT);
+        digitalWrite(pinInfo.pin, HIGH);
       } else {
         Serial.println("Tipo no válido");
         continue;  // Continuar con la siguiente entrada
