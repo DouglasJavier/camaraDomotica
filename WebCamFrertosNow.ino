@@ -12,20 +12,20 @@
 
 /* const char *ssid = "SR COLQUE";
 const char *password = "a9s8d7f6XYZ"; */
-const char *ssid = "COLQUE";
-const char *password = "A9S8D7F6XYZ";
+/* const char *ssid = "COLQUE";
+const char *password = "A9S8D7F6XYZ"; */
 /* const char *ssid = "TECNO SPARK Go 2023";
 const char *password = "rshniq4rwwfkqd7"; */
-/* const char *ssid = "AGETIC01";
-const char *password = "03r1XY6mOT$"; */
-IPAddress ip(192, 168, 0, 202);      // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 0, 1);   // Asigna la puerta de enlace (router)
+const char *ssid = "douglas-HP";
+const char *password = "delUnoAlOnce654";
+IPAddress ip(10, 42, 0, 10);      // Asigna la IP estática deseada
+IPAddress gateway(10, 42, 0, 1);   // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
 /* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
 IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
-const char *serverAddress = "http://192.168.0.16:5000/historialIncidentes";
+const char *serverAddress = "http://10.42.0.1:5000/historialIncidentes";
 /* const char *serverAddress = "https://domotica-backend-nestjs.onrender.com/historialIncidentes"; */
 const char *passwordESP = "your_password";
 char hash[65];
@@ -59,10 +59,11 @@ std::vector<SensorFocoMapping> sensorFocoMapa;
 String idDispositivo;
 boolean alumbradoAutomatico;
 boolean enviarReporte;
-
+QueueHandle_t sensorDataQueue;
 //devolucion de la llamada cuando se envian datos
-TaskHandle_t tSensor;     // maneja entradas
-TaskHandle_t tVerificar;  // maneja la reconeccion
+TaskHandle_t tSensor;       // maneja entradas
+TaskHandle_t tVerificar;    // maneja la reconeccion
+TaskHandle_t tEnvioSensor;  // maneja la reconeccion
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
@@ -86,6 +87,8 @@ void setup() {
   imprimirPinInfoList();
   // creando mapa
   crearMapaSensorFoco();
+  // Inicializar la cola
+  sensorDataQueue = xQueueCreate(10, sizeof(SensorInfo));
   xTaskCreatePinnedToCore(
     leerSensor,
     "Sensores",
@@ -93,7 +96,7 @@ void setup() {
     NULL,
     2,
     &tSensor,
-    0);
+    1);
   xTaskCreatePinnedToCore(
     verificarEstado,
     "Verificar",
@@ -102,6 +105,8 @@ void setup() {
     1,
     &tVerificar,
     1);
+  // Crear la tarea de envío de datos del sensor
+  /* xTaskCreatePinnedToCore(sendSensorDataTask, "SendSensorDataTask", 4096, NULL, 2, &tEnvioSensor, 1);*/
 }
 void loop() {
 }
@@ -404,15 +409,15 @@ void leerSensor(void *parameters) {
   while (1) {
     if (enviarReporte || alumbradoAutomatico) {
       for (SensorInfo &sensorInfo : sensoresActivos) {
-        //Serial.println("leendo sensor");
         int valorSensor = digitalRead(sensorInfo.pin);
+
         if (enviarReporte) {
-          if (((valorSensor == HIGH && sensorInfo.tipoSalida == "pullDown") || (valorSensor == LOW && sensorInfo.tipoSalida == "pullUp")) && (sensorInfo.detecciones < 10)) {
-            sensorInfo.detecciones = sensorInfo.detecciones + 1;  // Incrementar el contador de detecciones
-            Serial.print(sensorInfo.detecciones);
-            Serial.println("..SI");
+          bool deteccionValida = ((valorSensor == HIGH && sensorInfo.tipoSalida == "pullDown") || (valorSensor == LOW && sensorInfo.tipoSalida == "pullUp"));
+          if (deteccionValida && (sensorInfo.detecciones < 10)) {
+            sensorInfo.detecciones++;  // Incrementar el contador de detecciones
+            Serial.println("Detección válida");
           }
-          if ((sensorInfo.detecciones >= 10)) {
+          if (sensorInfo.detecciones >= 10) {
             sendSensorData(sensorInfo);
             sensorInfo.detecciones = 0;  // Reiniciar el contador después de enviar
             vTaskDelay(pdMS_TO_TICKS(30000));
@@ -548,6 +553,10 @@ void sendSensorData(SensorInfo &sensorInfo) {
   Serial.println(serverAddress);
   // Crear una conexión HTTP
   HTTPClient http;
+
+  // Configurar el timeout
+  http.setTimeout(6000);  // Timeout de 6 segundos
+
   http.begin(serverAddress);
 
   // Configurar las cabeceras de la solicitud
@@ -571,7 +580,7 @@ void sendSensorData(SensorInfo &sensorInfo) {
     // Manejar la respuesta (puedes agregar más lógica aquí según tus necesidades)
     Serial.println(httpResponseCode);
     Serial.println(jsonStr);
-    if (httpResponseCode == 201) {
+    if (httpResponseCode == 201 || httpResponseCode == 200) {
       Serial.println("JSON enviado con éxito");
       Serial.println(httpResponseCode);
     } else {
@@ -582,10 +591,14 @@ void sendSensorData(SensorInfo &sensorInfo) {
     }
   } else {
     Serial.println("Error al enviar la solicitud");
+    // Manejar el error de conexión
+    Serial.print("Error: ");
+    Serial.println(http.errorToString(httpResponseCode).c_str());
   }
   // Liberar recursos de la conexión HTTP
   http.end();
 }
+
 void setup_wifi() {
   delay(10);
   Serial.println();

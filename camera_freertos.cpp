@@ -23,7 +23,7 @@ const int FPS = 14;
 
 // Manejaremos solicitudes de clientes web cada 50 ms (20 Hz)
 const int WSINTERVAL = 100;
-volatile int numClients = 0;
+
 
 // ======== Tarea del controlador de conexión del servidor ==========================
 void mjpegCB(void* pvParameters) {
@@ -43,7 +43,7 @@ void mjpegCB(void* pvParameters) {
   xTaskCreatePinnedToCore(
     camCB,     // callback
     "cam",     // name
-    6 * 1024,      // stacj size
+    6 * 1024,  // stacj size
     NULL,      // parameters
     5,         // priority
     &tCam,     // RTOS task handle
@@ -207,9 +207,9 @@ void handleJPGSstream(void) {
     server.send(401, "application/json", response);
     return;
   }
-  int queueSize =  uxQueueMessagesWaiting(streamingClients);
+  /* int queueSize =  uxQueueMessagesWaiting(streamingClients);
     Serial.print("Tamaño de la cola: ");
-    Serial.println(queueSize);
+    Serial.println(queueSize); */
   // Solo puede acomodar 10 clientes. El límite es un valor predeterminado para las conexiones WiFi
   if (!uxQueueSpacesAvailable(streamingClients)) return;
 
@@ -305,12 +305,13 @@ const char JHEADER[] = "HTTP/1.1 200 OK\r\n"
                        "Content-type: image/jpeg\r\n\r\n";
 const int jhdLen = strlen(JHEADER);
 
-const char JHEADER2[] = "HTTP/1.1 200 OK\r\n"
+/* const char JHEADER2[] = "HTTP/1.1 200 OK\r\n"
                         "Content-type: text/plain\r\n\r\n";
-const int jhdLen2 = strlen(JHEADER2);
+const int jhdLen2 = strlen(JHEADER2); */
 
 // ==== Serve up one JPEG frame =============================================
 void handleJPG(void) {
+
   WiFiClient client = server.client();
   String key = server.header("Authorization").substring(7);
   if (!compararPasswords(key)) {
@@ -320,10 +321,20 @@ void handleJPG(void) {
     return;
   }
   if (!client.connected()) return;
-  cam.run();
-  client.write(JHEADER, jhdLen);
-  client.write((char*)cam.getfb(), cam.getSize());
-  Serial.println((char*)cam.getfb());
+  //vTaskSuspend(tMjpeg);
+  
+   if (eTaskGetState(tCam) == eSuspended) {
+    cam.run();
+    client.write(JHEADER, jhdLen);
+    client.write((char*)cam.getfb(), cam.getSize());
+  } else {
+     Serial.println("Clientes en stream");
+    client.write(JHEADER, jhdLen);
+    client.write((char*)cam.getfb(), cam.getSize());
+   
+  }
+
+  //vTaskResume(tMjpeg);
 }
 
 // ==== Handle invalid URL requests ============================================
@@ -390,7 +401,7 @@ void setup_cam() {
     "mjpeg",
     6 * 1024,
     NULL,
-    6,
+    5,
     &tMjpeg,
     APP_CPU);
 }
