@@ -10,21 +10,14 @@
 #include <mbedtls/sha256.h>
 #include "esp_heap_caps.h"
 
-/* const char *ssid = "SR COLQUE";
-const char *password = "a9s8d7f6XYZ"; */
-/* const char *ssid = "TECNO SPARK Go 2023";
-const char *password = "rshniq4rwwfkqd7"; */
-const char *ssid = "AGETIC01";
-const char *password = "03r1XY6mOT$";
-/* IPAddress ip(192, 168, 1, 203);      // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 1, 1);   // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred */
-IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred
 
-const char *serverAddress = "http://192.168.29.127:5000/historialIncidentes";
-//const char *serverAddress = "http://192.168.1.15:5000/historialIncidentes";
+const char *ssid = "douglas-HP";
+const char *password = "delUnoAlOnce654";
+IPAddress ip(10, 42, 0, 10);      // Asigna la IP estática deseada
+IPAddress gateway(10, 42, 0, 1);   // Asigna la puerta de enlace (router)
+IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
+
+const char *serverAddress = "http://10.42.0.1:5000/historialIncidentes";
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
@@ -44,15 +37,24 @@ struct SensorInfo {
   int detecciones;
   String tipoSalida;
 };
+
+struct SensorFocoMapping {
+  int pinSensor;
+  int pinFoco;
+  int idUbicacion;
+};
+
 std::vector<PinInfo> pinInfoList;
 std::vector<SensorInfo> sensoresActivos;
+std::vector<SensorFocoMapping> sensorFocoMapa;
 String idDispositivo;
 boolean alumbradoAutomatico;
 boolean enviarReporte;
-
+QueueHandle_t sensorDataQueue;
 //devolucion de la llamada cuando se envian datos
-TaskHandle_t tSensor;     // maneja entradas
-TaskHandle_t tVerificar;  // maneja la reconeccion
+TaskHandle_t tSensor;       // maneja entradas
+TaskHandle_t tVerificar;    // maneja la reconeccion
+TaskHandle_t tEnvioSensor;  // maneja la reconeccion
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
@@ -61,6 +63,7 @@ void setup() {
   server.on("/conf_pin", HTTP_POST, handlePostSensorActuador);
   server.on("/actuador", HTTP_POST, handleActuador);
   server.on("/sensores", HTTP_POST, handlePostSensoresActivos);
+  server.on("/alumbradoAutomatico", HTTP_POST, handleAlumbradoAutomatico);
   server.on("/reiniciar", HTTP_POST, handleReiniciar);
   setup_cam();
   server.begin();
@@ -73,10 +76,14 @@ void setup() {
   cargarSensoresActivosDesdeArchivo();
   imprimirSensoresActivosArchivo();
   imprimirPinInfoList();
+  // creando mapa
+  crearMapaSensorFoco();
+  // Inicializar la cola
+  sensorDataQueue = xQueueCreate(10, sizeof(SensorInfo));
   xTaskCreatePinnedToCore(
     leerSensor,
     "Sensores",
-    3 * 1024,
+    4 * 1024,
     NULL,
     2,
     &tSensor,
@@ -89,6 +96,8 @@ void setup() {
     1,
     &tVerificar,
     1);
+  // Crear la tarea de envío de datos del sensor
+  /* xTaskCreatePinnedToCore(sendSensorDataTask, "SendSensorDataTask", 4096, NULL, 2, &tEnvioSensor, 1);*/
 }
 void loop() {
 }
@@ -129,6 +138,8 @@ void handlePostSensorActuador() {
     Serial.print(pin);
     Serial.print(" ");
     Serial.println(tipo);
+    Serial.print(" ");
+    Serial.println(tipoSalida);
     // Configurar el pin según el tipo (SENSOR o ACTUADOR)
     if (tipo == "SENSOR") {
       if (tipoSalida == "pullUp") {
@@ -153,6 +164,8 @@ void handlePostSensorActuador() {
     pinInfo.idUbicacion = idUbicacion;
     pinInfoList.push_back(pinInfo);
   }
+  // creando mapa
+  crearMapaSensorFoco();
   Serial.println("Pines configurados correctamente");
   guardarConfiguracionEnArchivo();
   imprimirConfiguracionArchivo();
@@ -183,9 +196,8 @@ void handlePostSensoresActivos() {
   sensoresActivos.clear();
   // Obtener el arreglo de sensores y actuadores
   JsonArray sensoresActuadores = doc["sensoresActuadores"].as<JsonArray>();
-  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
   enviarReporte = doc["enviarReporte"].as<boolean>();
-
+  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
   // Recorrer el arreglo y configurar los pines
   Serial.println("Pines de senores que deben activarse: ");
   for (JsonObject item : sensoresActuadores) {
@@ -213,6 +225,12 @@ void handlePostSensoresActivos() {
 }
 
 void guardarConfiguracionEnArchivo() {
+  if (SPIFFS.remove("/config.json.json")) {
+    Serial.println("Archivo config.json eliminado correctamente.");
+  } else {
+    Serial.println("No se pudo eliminar el archivo sensoresActivos.json.");
+  }
+
   // Abre el archivo en modo de escritura
   File configFile = SPIFFS.open("/config.json", "w");
   if (!configFile) {
@@ -324,15 +342,15 @@ void cargarConfiguracionDesdeArchivo() {
       Serial.println(pinInfo.tipo);
       // Configurar el pin según el tipo (SENSOR o ACTUADOR)
       if (pinInfo.tipo == "SENSOR") {
-
-        if (pinInfo.descripcion == "MQ-7" || pinInfo.descripcion == "MQ-2") {
+        if (pinInfo.tipoSalida == "pullUp") {
+          Serial.println("sensor pull up");
           pinMode(pinInfo.pin, INPUT_PULLUP);
-
         } else {
           pinMode(pinInfo.pin, INPUT_PULLDOWN);
         }
       } else if (pinInfo.tipo == "ACTUADOR") {
         pinMode(pinInfo.pin, OUTPUT);
+        digitalWrite(pinInfo.pin, HIGH);
       } else {
         Serial.println("Tipo no válido");
         continue;  // Continuar con la siguiente entrada
@@ -380,28 +398,26 @@ void cargarSensoresActivosDesdeArchivo() {
 }
 void leerSensor(void *parameters) {
   while (1) {
-    unsigned long ultimaHoraEnviada = 0;
-    for (SensorInfo &sensorInfo : sensoresActivos) {
-      //Serial.println("leendo sensor");
-      // Verificar si el pin de sensor está activo (cambiar según tu lógica)
-      int valorSensor = digitalRead(sensorInfo.pin);
-      if ((valorSensor == HIGH && sensorInfo.tipoSalida == "pullDown") || (valorSensor == LOW && sensorInfo.tipoSalida == "pullUp")) {
-        if ((sensorInfo.detecciones < 10) && (millis() - ultimaHoraEnviada >= 30000)) {
-          sensorInfo.detecciones = sensorInfo.detecciones + 1;  // Incrementar el contador de detecciones
-          Serial.print(sensorInfo.detecciones);
-          Serial.println("..SI");
+    if (enviarReporte || alumbradoAutomatico) {
+      for (SensorInfo &sensorInfo : sensoresActivos) {
+        int valorSensor = digitalRead(sensorInfo.pin);
+
+        if (enviarReporte) {
+          bool deteccionValida = ((valorSensor == HIGH && sensorInfo.tipoSalida == "pullDown") || (valorSensor == LOW && sensorInfo.tipoSalida == "pullUp"));
+          if (deteccionValida && (sensorInfo.detecciones < 10)) {
+            sensorInfo.detecciones++;  // Incrementar el contador de detecciones
+            Serial.println("Detección válida");
+          }
+          if (sensorInfo.detecciones >= 10) {
+            sendSensorData(sensorInfo);
+            sensorInfo.detecciones = 0;  // Reiniciar el contador después de enviar
+            vTaskDelay(pdMS_TO_TICKS(30000));
+          }
         }
-        /*  else {
-        sensorInfo.detecciones = 0;  // Reiniciar el contador si no se detecta nada
-      } */
-      }
-      if (alumbradoAutomatico) {
-        activarAlumbradoAutomatico(sensorInfo.pin, valorSensor);
-      }
-      if ((sensorInfo.detecciones >= 10) && (millis() - ultimaHoraEnviada >= 30000) && enviarReporte) {
-        sendSensorData(sensorInfo);
-        sensorInfo.detecciones = 0;  // Reiniciar el contador después de enviar
-        vTaskDelay(pdMS_TO_TICKS(30000));
+
+        if (alumbradoAutomatico) {
+          activarAlumbradoAutomatico(sensorInfo.pin, valorSensor);
+        }
       }
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -412,14 +428,15 @@ void verificarEstado(void *pvParameters) {
   while (1) {
     Serial.println("entro aqui");
     if (WiFi.status() != WL_CONNECTED) {
+      WiFi.disconnect();
       Serial.println("WiFi reconnecting...");
       setup_wifi();
     } else {
       Serial.println("WiFi aun conectado");
     }
-    size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    /* size_t freeRAM = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     Serial.print("Free RAM after initialization: ");
-    Serial.println(freeRAM);
+    Serial.println(freeRAM); */
     //delay(10000);  // Delay to avoid constant checking
     vTaskDelay(pdMS_TO_TICKS(60000));
   }
@@ -477,6 +494,36 @@ void handleActuador() {
   String response = "{\"message\":\"Acción realizada correctamente\"}";
   server.send(200, "application/json", response);
 }
+
+void handleAlumbradoAutomatico() {
+  String json = server.arg("plain");
+  String key = server.header("Authorization").substring(7);
+  if (!compararPasswords(key)) {
+    Serial.println("Desautorizado");
+    String response = "{\"message\":\"Desautorizado\"}";
+    server.send(401, "application/json", response);
+    return;
+  }
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, json);
+  if (error) {
+    server.send(400, "application/json", "{\"message\":\"Error en el JSON\"}");
+    return;
+  }
+
+  // Configuración alumbrado automatico JSON
+  alumbradoAutomatico = doc["alumbradoAutomatico"].as<boolean>();
+  Serial.println("Alumbrado automatico");
+  Serial.println(alumbradoAutomatico);
+  if (!alumbradoAutomatico) {
+    apagarAlumbradoAutomatico();
+  }
+  guardarSensoresActivosEnArchivo();
+  // Enviar una respuesta JSON de confirmación
+  String response = "{\"message\":\"Acción realizada correctamente\"}";
+  server.send(200, "application/json", response);
+}
+
 void handleReiniciar() {
   String key = server.header("Authorization").substring(7);
   if (!compararPasswords(key)) {
@@ -497,6 +544,10 @@ void sendSensorData(SensorInfo &sensorInfo) {
   Serial.println(serverAddress);
   // Crear una conexión HTTP
   HTTPClient http;
+
+  // Configurar el timeout
+  http.setTimeout(6000);  // Timeout de 6 segundos
+
   http.begin(serverAddress);
 
   // Configurar las cabeceras de la solicitud
@@ -520,7 +571,7 @@ void sendSensorData(SensorInfo &sensorInfo) {
     // Manejar la respuesta (puedes agregar más lógica aquí según tus necesidades)
     Serial.println(httpResponseCode);
     Serial.println(jsonStr);
-    if (httpResponseCode == 201) {
+    if (httpResponseCode == 201 || httpResponseCode == 200) {
       Serial.println("JSON enviado con éxito");
       Serial.println(httpResponseCode);
     } else {
@@ -531,10 +582,14 @@ void sendSensorData(SensorInfo &sensorInfo) {
     }
   } else {
     Serial.println("Error al enviar la solicitud");
+    // Manejar el error de conexión
+    Serial.print("Error: ");
+    Serial.println(http.errorToString(httpResponseCode).c_str());
   }
   // Liberar recursos de la conexión HTTP
   http.end();
 }
+
 void setup_wifi() {
   delay(10);
   Serial.println();
@@ -543,6 +598,7 @@ void setup_wifi() {
   WiFi.mode(WIFI_STA);
   //WiFi.setSleepMode(WIFI_NONE_SLEEP);
   esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.setSleep(0);
   WiFi.begin(ssid, password);
   WiFi.config(ip, gateway, subnet);
   while (WiFi.status() != WL_CONNECTED) {
@@ -558,39 +614,27 @@ void setup_wifi() {
 }
 
 void activarAlumbradoAutomatico(int pin, int estado) {
-  int ubicacion = buscarUbicacion(pin);
-  int tam = pinInfoList.size();
-  for (int i = 0; i < tam; i++) {
-    PinInfo pin = pinInfoList[i];
-    if (pin.descripcion == "FOCO" && pin.idUbicacion == ubicacion) {
+  for (SensorFocoMapping &sensorFoco : sensorFocoMapa) {
+    if (sensorFoco.pinSensor == pin) {
       if (estado == LOW) {
-        digitalWrite(pin.pin, HIGH);
+        digitalWrite(sensorFoco.pinFoco, HIGH);
       } else {
-        digitalWrite(pin.pin, LOW);
+        Serial.print("alumbrado en ");
+        Serial.print(sensorFoco.pinFoco);
+        Serial.print(" ");
+        Serial.println(pin);
+        digitalWrite(sensorFoco.pinFoco, LOW);
       }
     }
   }
 }
 
 void apagarAlumbradoAutomatico() {
-  int tam = pinInfoList.size();
-  for (int i = 0; i < tam; i++) {
-    PinInfo pin = pinInfoList[i];
-    if (pin.descripcion == "FOCO") {
-      digitalWrite(pin.pin, HIGH);
-    }
+  for (SensorFocoMapping &sensorFoco : sensorFocoMapa) {
+    digitalWrite(sensorFoco.pinFoco, HIGH);
   }
 }
 
-int buscarUbicacion(int pin) {
-  int tam = pinInfoList.size();
-  int ubicacion = 0;
-  for (int i = 0; i < tam; i++) {
-    if ((pinInfoList[i].pin == pin) && (pinInfoList[i].descripcion == "PIR"))
-      ubicacion = pinInfoList[i].idUbicacion;
-  }
-  return ubicacion;
-}
 void imprimirConfiguracionArchivo() {
   // Abre el archivo en modo de lectura
   File configFile = SPIFFS.open("/config.json", "r");
@@ -664,4 +708,32 @@ bool compararPasswords(String hashComparar) {
     return false;
   }
   return true;
+}
+
+void crearMapaSensorFoco() {
+  Serial.println("Creando mapa sesores actuadores ...");
+  sensorFocoMapa.clear();
+  for (PinInfo &pinInfo : pinInfoList) {
+    if (pinInfo.descripcion == "FOCO") {
+      SensorFocoMapping sensorFoco;
+      sensorFoco.pinFoco = pinInfo.pin;
+      sensorFoco.pinSensor = 0;
+      sensorFoco.idUbicacion = pinInfo.idUbicacion;
+      sensorFocoMapa.push_back(sensorFoco);
+    }
+  }
+  for (SensorFocoMapping &sensorFoco : sensorFocoMapa) {
+    for (PinInfo &pinInfo : pinInfoList) {
+
+      if (pinInfo.descripcion == "PIR" && pinInfo.idUbicacion == sensorFoco.idUbicacion) {
+        sensorFoco.pinSensor = pinInfo.pin;
+        Serial.println("..........................");
+        Serial.println(sensorFoco.pinFoco);
+        Serial.println(sensorFoco.pinSensor);
+        Serial.println(sensorFoco.idUbicacion);
+        Serial.println("..........................");
+      }
+    }
+  }
+  Serial.println("Se creó mapa correctamente");
 }
