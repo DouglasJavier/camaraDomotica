@@ -37,6 +37,10 @@ Las demas partes del proyecto se encuentran en:
 - Backend: [domotica-backend-nestjs](https://github.com/DouglasJavier/domotica-backend-nestjs)
 - Frontend: [domotica-frontend-react-vite](https://github.com/DouglasJavier/domotica-frontend-react-vite)
 
+## Descripcion general del proyecto
+El proyecto se basó en la utilización de hardware y software de código abierto, haciendo uso de dispositivos como ESP-32 CAM, que permite la flexibilidad de añadir o quitar sensores y actuadores. Entre ellos se encuentran los sensores PIR HC-SR501 y sensores de CO M-Q7, junto con actuadores como módulos relé. Para la gestión del sistema, se emplearon aplicaciones cliente-servidor desarrolladas en React, Vite y NestJS, respaldadas por una base de datos PostgreSQL y envío de notificaciones a través de Telegram. En términos de seguridad, se implementaron tokens JWT tanto para la comunicación cliente-servidor y password para las ESP-32.
+El sistema logra la mayoría de las funcionalidades esperadas para un sistema domótico de seguridad, aunque tiene limitaciones como el control de las redes eléctricas, de agua o gas de la residencia, así como la ausencia de portero automático y cerraduras inteligentes.
+
 ## Nota
 
 Este proyecto se basa en el repositorio "[esp32-cam-mjpeg-multiclient](https://github.com/arkhipenko/esp32-cam-mjpeg-multiclient)" de Anatoli Arkhipenko. El código fue adaptado y modularizado para cumplir con los requisitos específicos de nuestro sistema.
