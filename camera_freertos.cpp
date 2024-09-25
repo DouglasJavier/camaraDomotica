@@ -1,8 +1,6 @@
 
 #include "camera_freertos.h"
 
-/* #include "camera_pins.h"
-#define CAMERA_MODEL_AI_THINKER */
 
 OV2640 cam;
 

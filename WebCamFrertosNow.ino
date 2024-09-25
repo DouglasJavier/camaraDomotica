@@ -10,23 +10,14 @@
 #include <mbedtls/sha256.h>
 #include "esp_heap_caps.h"
 
-/* const char *ssid = "SR COLQUE";
-const char *password = "a9s8d7f6XYZ"; */
-/* const char *ssid = "COLQUE";
-const char *password = "A9S8D7F6XYZ"; */
-/* const char *ssid = "TECNO SPARK Go 2023";
-const char *password = "rshniq4rwwfkqd7"; */
+
 const char *ssid = "douglas-HP";
 const char *password = "delUnoAlOnce654";
 IPAddress ip(10, 42, 0, 10);      // Asigna la IP estática deseada
 IPAddress gateway(10, 42, 0, 1);   // Asigna la puerta de enlace (router)
 IPAddress subnet(255, 255, 255, 0);  // Asigna la máscara de subred
-/* IPAddress ip(192, 168, 29, 250);     // Asigna la IP estática deseada
-IPAddress gateway(192, 168, 29, 1);  // Asigna la puerta de enlace (router)
-IPAddress subnet(255, 255, 254, 0);  // Asigna la máscara de subred */
 
 const char *serverAddress = "http://10.42.0.1:5000/historialIncidentes";
-/* const char *serverAddress = "https://domotica-backend-nestjs.onrender.com/historialIncidentes"; */
 const char *passwordESP = "your_password";
 char hash[65];
 String hashString;
